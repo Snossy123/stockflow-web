@@ -2,6 +2,12 @@ import type { ApiErrorBody } from './types'
 
 const API_BASE = '/api'
 
+let unauthorizedHandler: (() => void) | null = null
+
+export function setOnUnauthorized(handler: (() => void) | null) {
+  unauthorizedHandler = handler
+}
+
 export class ApiError extends Error {
   status: number
   code?: string | null
@@ -32,6 +38,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const data = text ? (JSON.parse(text) as unknown) : null
 
   if (!response.ok) {
+    if (response.status === 401 && path !== '/auth/login') {
+      unauthorizedHandler?.()
+    }
     const body = data as ApiErrorBody | null
     throw new ApiError(response.status, body?.message || `API ${response.status}`, body?.code)
   }

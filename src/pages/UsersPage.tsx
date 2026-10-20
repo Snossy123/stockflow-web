@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { DataTable, Dialog, EmptyState, Field, PageBody, PageError, PageHeader, Tabs } from '../components/ui'
 import { apiGet, apiPost } from '../lib/api'
-import { dateText } from '../lib/format'
+import { dateTimeText } from '../lib/format'
 import { searchText, useTableQuery } from '../lib/table'
 import type { LoginEvent, RoleMatrix, UserRow } from '../lib/types'
 
@@ -17,10 +17,10 @@ export function UsersPage() {
   const [password, setPassword] = useState('arafa123')
   const [roleId, setRoleId] = useState(4)
   const usersTable = useTableQuery(users, (row) =>
-    searchText(row.name, row.username, row.roleName, row.status === 'active' ? 'نشط' : 'موقوف', dateText(row.lastLoginAt)),
+    searchText(row.name, row.username, row.roleName, row.status === 'active' ? 'نشط' : 'موقوف', dateTimeText(row.lastLoginAt)),
   )
   const eventsTable = useTableQuery(events, (row) =>
-    searchText(row.userName, row.username, row.success ? 'نجاح' : 'فشل', dateText(row.occurredAt)),
+    searchText(row.userName, row.username, row.success ? 'نجاح' : 'فشل', dateTimeText(row.occurredAt)),
   )
 
   function reload() {
@@ -84,7 +84,7 @@ export function UsersPage() {
                         {row.status === 'active' ? 'نشط' : 'موقوف'}
                       </span>
                     </td>
-                    <td className="num">{dateText(row.lastLoginAt)}</td>
+                    <td className="num">{dateTimeText(row.lastLoginAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -141,7 +141,7 @@ export function UsersPage() {
                       <td>
                         <span className={row.success ? 'tag tag-ok' : 'tag tag-accent'}>{row.success ? 'نجاح' : 'فشل'}</span>
                       </td>
-                      <td className="num">{dateText(row.occurredAt)}</td>
+                      <td className="num">{dateTimeText(row.occurredAt)}</td>
                     </tr>
                   ))}
                 </tbody>

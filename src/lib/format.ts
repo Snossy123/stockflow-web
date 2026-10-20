@@ -72,6 +72,39 @@ export function dateText(value: string | null | undefined) {
   }).format(date)
 }
 
+export function timeText(value: string | null | undefined) {
+  if (!value) return '—'
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (dateOnly) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ar-EG', {
+    numberingSystem: 'latn',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+export function dateTimeText(value: string | null | undefined) {
+  if (!value) return '—'
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (dateOnly) return dateText(value)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const d = new Intl.DateTimeFormat('ar-EG', {
+    numberingSystem: 'latn',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+  const t = new Intl.DateTimeFormat('ar-EG', {
+    numberingSystem: 'latn',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+  return `${d} · ${t}`
+}
+
 export function statusLabel(status: string) {
   if (status === 'draft') return 'مسودة'
   if (status === 'approved') return 'معتمدة'
@@ -93,3 +126,13 @@ export function kindLabel(kind: string) {
   if (kind === 'payment') return 'دفع'
   return kind
 }
+
+export function refTypeLabel(refType: string) {
+  if (refType === 'purchase') return 'فاتورة شراء'
+  if (refType === 'sale') return 'فاتورة بيع'
+  if (refType === 'count') return 'جرد'
+  if (refType === 'expense') return 'مصروف'
+  if (refType === 'item') return 'رصيد صنف'
+  return refType
+}
+

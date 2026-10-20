@@ -1,10 +1,11 @@
 import { Receipt, TrendingUp, Truck, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { InvoiceDetailsDialog, InvoiceRefButton, type InvoiceViewTarget } from '../components/InvoiceDetailsDialog'
 import { DataTable, EmptyState, KpiCard, Money, PageBody, PageError, PageHeader, SectionTitle } from '../components/ui'
 import { apiGet } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { dateText, kindLabel } from '../lib/format'
+import { dateText, kindLabel, refTypeLabel } from '../lib/format'
 import { searchText, useTableQuery } from '../lib/table'
 import type { Dashboard } from '../lib/types'
 
@@ -19,8 +20,9 @@ export function DashboardPage() {
   const { can } = useAuth()
   const [data, setData] = useState<Dashboard | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [detailTarget, setDetailTarget] = useState<InvoiceViewTarget | null>(null)
   const recent = useTableQuery(data?.recent || [], (row) =>
-    searchText(kindLabel(row.kind), row.itemName, dateText(row.occurredAt), row.qtyIn, row.qtyOut),
+    searchText(kindLabel(row.kind), row.itemName, dateText(row.occurredAt), row.qtyIn, row.qtyOut, row.refNo, row.refId),
   )
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export function DashboardPage() {
         actions={
           <>
             {can('purchases', 'create') ? (
-              <Link to="/expenses" className="btn btn-secondary">
+              <Link to="/purchases" className="btn btn-secondary">
                 فاتورة شراء
               </Link>
             ) : null}
@@ -87,6 +89,7 @@ export function DashboardPage() {
                       <th>الصنف</th>
                       <th>التاريخ</th>
                       <th>الكمية</th>
+                      <th>المرجع</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -96,6 +99,19 @@ export function DashboardPage() {
                         <td>{row.itemName}</td>
                         <td className="num">{dateText(row.occurredAt)}</td>
                         <td className="num">{row.qtyIn > 0 ? `+${row.qtyIn}` : `-${row.qtyOut}`}</td>
+                        <td>
+                          {row.refType === 'sale' || row.refType === 'purchase' ? (
+                            <InvoiceRefButton
+                              label={row.refNo || `#${row.refId}`}
+                              title={`عرض ${refTypeLabel(row.refType)}`}
+                              onClick={() => setDetailTarget({ kind: row.refType as 'sale' | 'purchase', id: row.refId })}
+                            />
+                          ) : (
+                            <span className="text-xs text-[var(--color-muted)]">
+                              {refTypeLabel(row.refType)} <span className="num">{row.refNo || `#${row.refId}`}</span>
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -123,6 +139,12 @@ export function DashboardPage() {
           </section>
         </div>
       </PageBody>
+
+      <InvoiceDetailsDialog
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onSelectTarget={setDetailTarget}
+      />
     </main>
   )
 }

@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { InvoiceDetailsDialog, InvoiceRefButton, type InvoiceViewTarget } from '../components/InvoiceDetailsDialog'
 import { ItemFormDialog, specText } from '../components/ItemFormDialog'
 import { DataTable, Dialog, Field, Money, PageBody, PageError, PageHeader } from '../components/ui'
 import { apiGet, apiPost, apiPut } from '../lib/api'
@@ -18,7 +20,7 @@ type DraftLine = {
   lengthDesc: string
 }
 
-type ApproveChoice = { cut: boolean; surplus: boolean }
+type ApproveChoice = { cut: boolean; cutQty: string; surplus: boolean }
 type ReturnQty = Record<number, string>
 
 function emptyLine(itemId = 0): DraftLine {
@@ -28,6 +30,7 @@ function emptyLine(itemId = 0): DraftLine {
 export function RevenuePage() {
   const { can } = useAuth()
   const { currentMonthClosed } = usePeriods()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [sales, setSales] = useState<Sale[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -45,6 +48,7 @@ export function RevenuePage() {
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()])
   const [saleOpen, setSaleOpen] = useState(false)
   const [addItemForLine, setAddItemForLine] = useState<number | null>(null)
+  const [detailTarget, setDetailTarget] = useState<InvoiceViewTarget | null>(null)
   const canAddItem = can('settings', 'create') || can('purchases', 'create') || can('sales', 'create')
   const salesTable = useTableQuery(sales, (row) =>
     searchText(
@@ -110,6 +114,29 @@ export function RevenuePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q) {
+      salesTable.setQuery(q)
+    }
+    const refId = Number(searchParams.get('refId'))
+    if (!refId || sales.length === 0) return
+    const target = sales.find((row) => row.id === refId)
+    if (target) {
+      salesTable.setQuery(target.no)
+      setDetailTarget({ kind: 'sale', data: target })
+    } else {
+      setDetailTarget({ kind: 'sale', id: refId })
+    }
+  }, [searchParams, sales])
+
+  function clearRefParam() {
+    if (!searchParams.has('refId')) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('refId')
+    setSearchParams(next, { replace: true })
+  }
+
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + Number(line.qty || 0) * Number(line.unitPrice || 0), 0),
     [lines],
@@ -155,10 +182,21 @@ export function RevenuePage() {
     setApproveSale(row)
     const next: Record<number, ApproveChoice> = {}
     row.items.forEach((line) => {
-      next[line.id] = { cut: false, surplus: false }
+      next[line.id] = { cut: false, cutQty: String(line.qty), surplus: false }
     })
     setApproveChoices(next)
   }
+
+  const invalidCutQty = useMemo(() => {
+    if (!approveSale) return false
+    return approveSale.items.some((line) => {
+      if (line.surplusItem) return false
+      const choice = approveChoices[line.id]
+      if (!choice?.cut) return false
+      const val = Number(choice.cutQty || 0)
+      return !Number.isFinite(val) || val <= 0 || val > Number(line.qty)
+    })
+  }, [approveSale, approveChoices])
 
   function submitApprove() {
     if (!approveSale) return
@@ -166,11 +204,16 @@ export function RevenuePage() {
     void apiPost<ApproveEffect>(`/sales/${approveSale.id}/approve`, {
       lines: approveSale.items
         .filter((line) => !line.surplusItem)
-        .map((line) => ({
-          lineId: line.id,
-          cut: approveChoices[line.id]?.cut || false,
-          surplus: approveChoices[line.id]?.surplus || false,
-        })),
+        .map((line) => {
+          const choice = approveChoices[line.id]
+          const cut = choice?.cut || false
+          return {
+            lineId: line.id,
+            cut,
+            cutQty: cut ? Number(choice?.cutQty || 0) : 0,
+            surplus: cut ? choice?.surplus || false : false,
+          }
+        }),
     })
       .then((res) => {
         setApproveSale(null)
@@ -184,7 +227,7 @@ export function RevenuePage() {
     setReturnSale(row)
     const next: ReturnQty = {}
     row.items.forEach((line) => {
-      next[line.id] = line.cut || line.returnableQty <= 0 ? '0' : String(line.returnableQty)
+      next[line.id] = line.returnableQty <= 0 ? '0' : String(line.returnableQty)
     })
     setReturnQtys(next)
     setReceivedNow('0')
@@ -253,11 +296,30 @@ export function RevenuePage() {
               <tbody>
                 {salesTable.pageRows.map((row) => (
                   <tr key={row.id}>
-                    <td className="num">{row.no}</td>
+                    <td>
+                      <InvoiceRefButton label={row.no} onClick={() => setDetailTarget({ kind: 'sale', data: row })} />
+                    </td>
                     <td>{row.customerName}</td>
                     <td className="num">{dateText(row.docDate)}</td>
                     <td className="num">{dateText(row.postingDate)}</td>
-                    <td>{row.kind === 'return' ? `مرتجع${row.reversedOfNo ? ` ${row.reversedOfNo}` : ''}` : 'بيع'}</td>
+                    <td>
+                      {row.kind === 'return' ? (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span>مرتجع</span>
+                          {row.reversedOfId && row.reversedOfNo ? (
+                            <InvoiceRefButton
+                              label={row.reversedOfNo}
+                              title="عرض الفاتورة الأصلية"
+                              onClick={() => setDetailTarget({ kind: 'sale', id: row.reversedOfId! })}
+                            />
+                          ) : row.reversedOfNo ? (
+                            <span className="num">{row.reversedOfNo}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        'بيع'
+                      )}
+                    </td>
                     <td>
                       <Money value={row.total} />
                     </td>
@@ -266,6 +328,13 @@ export function RevenuePage() {
                     </td>
                     <td>
                       <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setDetailTarget({ kind: 'sale', data: row })}
+                        >
+                          التفاصيل
+                        </button>
                         {row.status === 'draft' && can('sales', 'create') ? (
                           <button type="button" className="btn btn-secondary" onClick={() => loadDraft(row)}>
                             تعديل
@@ -520,66 +589,118 @@ export function RevenuePage() {
       ) : null}
 
       {approveSale ? (
-        <Dialog title={`اعتماد ${approveSale.no}`} onClose={() => setApproveSale(null)}>
-          <p className="m-0 mb-4">أكد القص والفائض لكل بند خشب. المقصوص مش هيرجع. بند الفائض الجاهز من غير قص.</p>
+        <Dialog title={`اعتماد ${approveSale.no}`} size="xl" onClose={() => setApproveSale(null)}>
+          <p className="m-0 mb-4">
+            أكد القص وعدد الألواح المقصوصة والفائض لكل بند خشب. الألواح المقصوصة مش هترجع، والفائض بيتسجل بنفس اسم الصنف
+            بعدد الألواح المقصوصة.
+          </p>
           <table className="table mb-4">
             <thead>
               <tr>
                 <th>الصنف</th>
                 <th>العدد</th>
                 <th>تم القص؟</th>
+                <th>عدد الألواح المقصوصة</th>
                 <th>في فائض؟</th>
               </tr>
             </thead>
             <tbody>
-              {approveSale.items.map((line) => (
-                <tr key={line.id}>
-                  <td>
-                    {line.itemCode} — {line.itemName}
-                  </td>
-                  <td className="num">{qty(line.qty)}</td>
-                  <td>
-                    {line.surplusItem ? (
-                      'لا'
-                    ) : (
-                      <input
-                        type="checkbox"
-                        checked={approveChoices[line.id]?.cut || false}
-                        onChange={(e) =>
-                          setApproveChoices((current) => ({
-                            ...current,
-                            [line.id]: {
-                              cut: e.target.checked,
-                              surplus: e.target.checked ? current[line.id]?.surplus || false : false,
-                            },
-                          }))
-                        }
-                      />
-                    )}
-                  </td>
-                  <td>
-                    {line.surplusItem ? (
-                      '—'
-                    ) : (
-                      <input
-                        type="checkbox"
-                        disabled={!approveChoices[line.id]?.cut}
-                        checked={approveChoices[line.id]?.surplus || false}
-                        onChange={(e) =>
-                          setApproveChoices((current) => ({
-                            ...current,
-                            [line.id]: { cut: current[line.id]?.cut || false, surplus: e.target.checked },
-                          }))
-                        }
-                      />
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {approveSale.items.map((line) => {
+                const choice = approveChoices[line.id]
+                const isCut = choice?.cut || false
+                const cutQtyNum = Number(choice?.cutQty || 0)
+                const badQty = isCut && (!Number.isFinite(cutQtyNum) || cutQtyNum <= 0 || cutQtyNum > Number(line.qty))
+                return (
+                  <tr key={line.id}>
+                    <td>
+                      {line.surplusItem ? `فائض — ${line.itemCode} — ${line.itemName}` : `${line.itemCode} — ${line.itemName}`}
+                    </td>
+                    <td className="num">{qty(line.qty)}</td>
+                    <td>
+                      {line.surplusItem ? (
+                        'لا'
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={isCut}
+                          onChange={(e) =>
+                            setApproveChoices((current) => ({
+                              ...current,
+                              [line.id]: {
+                                cut: e.target.checked,
+                                cutQty: current[line.id]?.cutQty || String(line.qty),
+                                surplus: e.target.checked ? current[line.id]?.surplus || false : false,
+                              },
+                            }))
+                          }
+                        />
+                      )}
+                    </td>
+                    <td>
+                      {line.surplusItem || !isCut ? (
+                        '—'
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={`input num w-28 ${badQty ? 'border-[var(--color-accent-700)]' : ''}`}
+                            type="number"
+                            min="1"
+                            max={line.qty}
+                            step="any"
+                            value={choice?.cutQty ?? String(line.qty)}
+                            onChange={(e) =>
+                              setApproveChoices((current) => ({
+                                ...current,
+                                [line.id]: {
+                                  cut: current[line.id]?.cut || false,
+                                  cutQty: e.target.value,
+                                  surplus: current[line.id]?.surplus || false,
+                                },
+                              }))
+                            }
+                          />
+                          <span className="text-xs text-[var(--color-muted)] num">/ {qty(line.qty)}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {line.surplusItem ? (
+                        '—'
+                      ) : (
+                        <input
+                          type="checkbox"
+                          disabled={!isCut}
+                          checked={choice?.surplus || false}
+                          onChange={(e) =>
+                            setApproveChoices((current) => ({
+                              ...current,
+                              [line.id]: {
+                                cut: current[line.id]?.cut || false,
+                                cutQty: current[line.id]?.cutQty || String(line.qty),
+                                surplus: e.target.checked,
+                              },
+                            }))
+                          }
+                        />
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+          {invalidCutQty ? (
+            <p className="m-0 mb-3 text-sm font-semibold text-[var(--color-accent-700)]">
+              عدد الألواح المقصوصة لازم يكون أكبر من صفر ومش أكبر من كمية البند.
+            </p>
+          ) : null}
           <div className="flex gap-2">
-            <button type="button" className="btn btn-primary" onClick={submitApprove} disabled={currentMonthClosed}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={submitApprove}
+              disabled={currentMonthClosed || invalidCutQty}
+            >
               اعتماد وخصم من المخزون
             </button>
             <button type="button" className="btn btn-secondary" onClick={() => setApproveSale(null)}>
@@ -591,33 +712,42 @@ export function RevenuePage() {
 
       {returnSale ? (
         <Dialog title={`مرتجع ${returnSale.no}`} onClose={() => setReturnSale(null)}>
-          <p className="m-0 mb-4">البنود المقصوصة مقفولة. اختار كمية الرجوع من المتبقي.</p>
+          <p className="m-0 mb-4">الألواح المقصوصة مقفولة. اختار كمية الرجوع من المتبقي غير المقصوص.</p>
           <table className="table mb-4">
             <thead>
               <tr>
                 <th>الصنف</th>
-                <th>المتبقي</th>
+                <th>المتبقي للرجوع</th>
                 <th>كمية المرتجع</th>
               </tr>
             </thead>
             <tbody>
-              {returnSale.items.map((line) => (
-                <tr key={line.id}>
-                  <td>
-                    {line.itemCode} — {line.itemName}
-                    {line.cut ? ' — اتقص' : ''}
-                  </td>
-                  <td className="num">{qty(line.returnableQty)}</td>
-                  <td>
-                    <input
-                      className="input num"
-                      disabled={line.cut || line.returnableQty <= 0}
-                      value={returnQtys[line.id] || '0'}
-                      onChange={(e) => setReturnQtys((current) => ({ ...current, [line.id]: e.target.value }))}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {returnSale.items.map((line) => {
+                const cutQtyVal = Number(line.cutQty || 0)
+                const cutBadge =
+                  line.cut && cutQtyVal >= Number(line.qty)
+                    ? ' — اتقص بالكامل'
+                    : line.cut && cutQtyVal > 0
+                      ? ` — اتقص ${qty(cutQtyVal)} من ${qty(line.qty)}`
+                      : ''
+                return (
+                  <tr key={line.id}>
+                    <td>
+                      {line.itemCode} — {line.itemName}
+                      {cutBadge}
+                    </td>
+                    <td className="num">{qty(line.returnableQty)}</td>
+                    <td>
+                      <input
+                        className="input num"
+                        disabled={line.returnableQty <= 0}
+                        value={returnQtys[line.id] || '0'}
+                        onChange={(e) => setReturnQtys((current) => ({ ...current, [line.id]: e.target.value }))}
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <Field label="المستلم يُرد الآن">
@@ -647,6 +777,15 @@ export function RevenuePage() {
           </button>
         </Dialog>
       ) : null}
+
+      <InvoiceDetailsDialog
+        target={detailTarget}
+        onClose={() => {
+          setDetailTarget(null)
+          clearRefParam()
+        }}
+        onSelectTarget={setDetailTarget}
+      />
     </main>
   )
 }

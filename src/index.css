@@ -360,6 +360,43 @@ a:hover {
   margin-bottom: 20px;
 }
 
+.filter-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-beige);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.filter-pill {
+  min-height: 34px;
+  padding: 0 14px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 3px);
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--ease),
+    color 180ms var(--ease),
+    box-shadow 180ms var(--ease);
+}
+
+.filter-pill:hover {
+  color: var(--color-text);
+}
+
+.filter-pill[aria-pressed='true'] {
+  color: #fff;
+  background: var(--color-accent);
+  box-shadow: var(--shadow-sm);
+}
+
 .section-title {
   margin: 0 0 16px;
   font-size: 17px;
@@ -462,6 +499,59 @@ a:hover {
 
 .table tbody tr:hover td {
   background: color-mix(in srgb, var(--color-beige) 55%, transparent);
+}
+
+.tree-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-level-1 {
+  padding-inline-start: 22px;
+}
+
+.tree-level-2 {
+  padding-inline-start: 46px;
+}
+
+.tree-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--color-wood);
+  background: color-mix(in srgb, var(--color-wood) 12%, transparent);
+  transition: background-color 180ms var(--ease), color 180ms var(--ease);
+}
+
+.tree-row:hover .tree-toggle {
+  background: color-mix(in srgb, var(--color-wood) 22%, transparent);
+  color: var(--color-accent);
+}
+
+.tree-spacer {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+}
+
+.tree-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-wood);
+  margin-inline: 8px 2px;
+}
+
+.tree-row-week td {
+  background: color-mix(in srgb, var(--color-beige) 38%, var(--color-surface));
+}
+
+.tree-row-day td {
+  background: color-mix(in srgb, var(--color-beige) 18%, var(--color-surface));
+  font-size: 13px;
 }
 
 .tabs {

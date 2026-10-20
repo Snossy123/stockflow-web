@@ -1,4 +1,5 @@
 import {
+  Banknote,
   BarChart3,
   Contact,
   LayoutDashboard,
@@ -21,13 +22,16 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'لوحة رئيسية', icon: LayoutDashboard, anyOf: [['dashboard', 'view']] },
   {
-    to: '/expenses',
+    to: '/purchases',
     label: 'الواردات',
     icon: Wallet,
-    anyOf: [
-      ['expenses', 'view'],
-      ['purchases', 'view'],
-    ],
+    anyOf: [['purchases', 'view']],
+  },
+  {
+    to: '/expenses',
+    label: 'المصروفات العمومية',
+    icon: Banknote,
+    anyOf: [['expenses', 'view']],
   },
   { to: '/suppliers', label: 'الموردين', icon: Truck, anyOf: [['suppliers', 'view']] },
   { to: '/inventory', label: 'المخزون', icon: Warehouse, anyOf: [['inventory', 'view']] },

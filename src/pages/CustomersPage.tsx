@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { InvoiceDetailsDialog, InvoiceRefButton, type InvoiceViewTarget } from '../components/InvoiceDetailsDialog'
 import {
   DataTable,
   Dialog,
@@ -16,7 +18,7 @@ import {
 } from '../components/ui'
 import { apiGet, apiPost } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { dateText, money, statusLabel } from '../lib/format'
+import { dateTimeText, money, statusLabel } from '../lib/format'
 import { usePeriods } from '../lib/periods'
 import { searchText, useTableQuery } from '../lib/table'
 import type { Customer, Payment, Sale } from '../lib/types'
@@ -24,6 +26,7 @@ import type { Customer, Payment, Sale } from '../lib/types'
 export function CustomersPage() {
   const { can } = useAuth()
   const { currentMonthClosed } = usePeriods()
+  const [searchParams] = useSearchParams()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selected, setSelected] = useState<Customer | null>(null)
   const [sales, setSales] = useState<Sale[]>([])
@@ -34,24 +37,48 @@ export function CustomersPage() {
   const [customerOpen, setCustomerOpen] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [detailTab, setDetailTab] = useState('sales')
+  const [detailTarget, setDetailTarget] = useState<InvoiceViewTarget | null>(null)
   const customersTable = useTableQuery(customers, (row) =>
     searchText(row.name, row.phone, row.owed, row.paid, row.remaining, row.remaining > 0 ? 'عليه' : 'متسوي'),
   )
   const salesTable = useTableQuery(sales, (row) =>
     searchText(row.no, row.kind === 'return' ? 'مرتجع' : 'بيع', row.total, statusLabel(row.status)),
   )
-  const receiptsTable = useTableQuery(receipts, (row) => searchText(dateText(row.occurredAt), row.amount, row.ref))
+  const receiptsTable = useTableQuery(receipts, (row) => searchText(dateTimeText(row.occurredAt), row.amount, row.ref))
 
   function reload() {
     void apiGet<Customer[]>('/customers').then((rows) => {
       setCustomers(rows)
-      setSelected((current) => rows.find((row) => row.id === current?.id) || rows[0] || null)
+      const paramId = Number(searchParams.get('id'))
+      setSelected((current) =>
+        (paramId ? rows.find((row) => row.id === paramId) : undefined) ||
+        rows.find((row) => row.id === current?.id) ||
+        rows[0] ||
+        null,
+      )
     })
   }
 
   useEffect(() => {
     reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const paramId = Number(searchParams.get('id'))
+    if (paramId && customers.length) {
+      const target = customers.find((row) => row.id === paramId)
+      if (target) setSelected(target)
+    }
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'receipts' || tabParam === 'sales') {
+      setDetailTab(tabParam)
+    }
+    const q = searchParams.get('q')
+    if (q) {
+      receiptsTable.setQuery(q)
+    }
+  }, [searchParams, customers])
 
   useEffect(() => {
     if (!selected) return
@@ -165,17 +192,49 @@ export function CustomersPage() {
                               <th>النوع</th>
                               <th>القيمة</th>
                               <th>الحالة</th>
+                              <th></th>
                             </tr>
                           </thead>
                           <tbody>
                             {salesTable.pageRows.map((row) => (
                               <tr key={row.id}>
-                                <td className="num">{row.no}</td>
-                                <td>{row.kind === 'return' ? 'مرتجع' : 'بيع'}</td>
+                                <td>
+                                  <InvoiceRefButton
+                                    label={row.no}
+                                    onClick={() => setDetailTarget({ kind: 'sale', data: row })}
+                                  />
+                                </td>
+                                <td>
+                                  {row.kind === 'return' ? (
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      <span>مرتجع</span>
+                                      {row.reversedOfId && row.reversedOfNo ? (
+                                        <InvoiceRefButton
+                                          label={row.reversedOfNo}
+                                          title="عرض الفاتورة الأصلية"
+                                          onClick={() => setDetailTarget({ kind: 'sale', id: row.reversedOfId! })}
+                                        />
+                                      ) : row.reversedOfNo ? (
+                                        <span className="num">{row.reversedOfNo}</span>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    'بيع'
+                                  )}
+                                </td>
                                 <td>
                                   <Money value={row.total} />
                                 </td>
                                 <td>{statusLabel(row.status)}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setDetailTarget({ kind: 'sale', data: row })}
+                                  >
+                                    التفاصيل
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -203,19 +262,37 @@ export function CustomersPage() {
                         <table className="table">
                           <thead>
                             <tr>
-                              <th>التاريخ</th>
+                              <th>التاريخ والوقت</th>
                               <th>المبلغ</th>
                               <th>مرجع</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {receiptsTable.pageRows.map((row) => (
-                              <tr key={row.id}>
-                                <td className="num">{dateText(row.occurredAt)}</td>
-                                <td className="num">{money(row.amount)}</td>
-                                <td>{row.ref || '—'}</td>
-                              </tr>
-                            ))}
+                            {receiptsTable.pageRows.map((row) => {
+                              const rawRef = (row.ref || '').trim()
+                              const candidateNo = rawRef.startsWith('مرتجع ')
+                                ? rawRef.slice('مرتجع '.length).trim()
+                                : rawRef
+                              const matchedSale = candidateNo
+                                ? sales.find((s) => s.no.toLowerCase() === candidateNo.toLowerCase())
+                                : undefined
+                              return (
+                                <tr key={row.id}>
+                                  <td className="num">{dateTimeText(row.occurredAt)}</td>
+                                  <td className="num">{money(row.amount)}</td>
+                                  <td>
+                                    {matchedSale ? (
+                                      <InvoiceRefButton
+                                        label={rawRef}
+                                        onClick={() => setDetailTarget({ kind: 'sale', data: matchedSale })}
+                                      />
+                                    ) : (
+                                      row.ref || '—'
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </DataTable>
@@ -281,6 +358,12 @@ export function CustomersPage() {
           </form>
         </Dialog>
       ) : null}
+
+      <InvoiceDetailsDialog
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onSelectTarget={setDetailTarget}
+      />
     </main>
   )
 }

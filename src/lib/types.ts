@@ -10,6 +10,7 @@ export type Me = {
   roleCode: string
   roleName: string
   permissions: Permission[]
+  sessionTimeoutMinutes?: number
 }
 
 export type ApiErrorBody = {
@@ -80,6 +81,8 @@ export type Purchase = {
   paidNow: number
   remaining: number
   total: number
+  reversedOfId?: number | null
+  reversedOfNo?: string | null
   items: PurchaseLine[]
 }
 
@@ -99,6 +102,7 @@ export type SaleLine = {
   total: number
   surplusGenerated: boolean
   cut: boolean
+  cutQty: number
   surplusItem: boolean
   returnableQty: number
   oversell: boolean
@@ -182,6 +186,7 @@ export type Movement = {
   unitCost: number
   refType: string
   refId: number
+  refNo?: string | null
   balanceAfter: number
 }
 
@@ -246,6 +251,28 @@ export type AccountingPeriod = {
   reopenedByName: string | null
 }
 
+export type PnlDayRow = {
+  date: string
+  revenue: number
+  cogs: number
+  gross: number
+  expenses: number
+  net: number
+}
+
+export type PnlWeekRow = {
+  key: string
+  label: string
+  fromDate: string
+  toDate: string
+  revenue: number
+  cogs: number
+  gross: number
+  expenses: number
+  net: number
+  days: PnlDayRow[]
+}
+
 export type PnlRow = {
   period: string
   revenue: number
@@ -254,12 +281,27 @@ export type PnlRow = {
   expenses: number
   net: number
   closed: boolean
+  weeks?: PnlWeekRow[]
+}
+
+export type CashRow = {
+  at: string
+  label: string
+  in: number
+  out: number
+  balance: number
+  refType?: string | null
+  refId?: number | null
+  refNo?: string | null
+  targetType?: string | null
+  targetId?: number | null
+  targetRef?: string | null
 }
 
 export type CashReport = {
   opening: number
   closing: number
-  rows: { at: string; label: string; in: number; out: number; balance: number }[]
+  rows: CashRow[]
 }
 
 export type AgingReport = {

@@ -1,12 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, Globe, Headset, Lock, User } from 'lucide-react'
 import { ArafaLogo } from '../components/ArafaLogo'
 import { LoginTextField } from '../components/login/LoginTextField'
 import { LoginVisualPanel } from '../components/login/LoginVisualPanel'
-import { ApiError } from '../lib/api'
+import { apiGet, ApiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import './login.css'
+
+const LICENSE_MESSAGE = 'النظام غير مفعّل على هذا الجهاز'
+
+function loginError(err: unknown): string {
+  if (err instanceof ApiError && err.code === 'LICENSE') {
+    return err.message || LICENSE_MESSAGE
+  }
+  if (err instanceof ApiError && err.status === 401) {
+    return 'اسم المستخدم أو كلمة المرور غير صحيحة'
+  }
+  return 'تعذر الاتصال بالنظام'
+}
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -14,6 +26,20 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void apiGet<{ enforced: boolean; valid: boolean; message?: string | null }>('/license/status')
+      .then((status) => {
+        if (!cancelled && status.enforced && !status.valid) {
+          setError(status.message || LICENSE_MESSAGE)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="login-page" dir="ltr">
@@ -48,13 +74,7 @@ export function LoginPage() {
                 form.get('remember') === 'on',
               )
                 .then(() => navigate('/'))
-                .catch((err: unknown) =>
-                  setError(
-                    err instanceof ApiError && err.status === 401
-                      ? 'اسم المستخدم أو كلمة المرور غير صحيحة'
-                      : 'تعذر الاتصال بالنظام',
-                  ),
-                )
+                .catch((err: unknown) => setError(loginError(err)))
                 .finally(() => setPending(false))
             }}
           >

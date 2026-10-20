@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { InvoiceDetailsDialog, InvoiceRefButton, type InvoiceViewTarget } from '../components/InvoiceDetailsDialog'
 import {
   DataTable,
   Dialog,
@@ -15,7 +17,7 @@ import {
 } from '../components/ui'
 import { apiGet, apiPost } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { dateText, money } from '../lib/format'
+import { dateText, dateTimeText, money } from '../lib/format'
 import { usePeriods } from '../lib/periods'
 import { searchText, useTableQuery } from '../lib/table'
 import type { Payment, Purchase, Supplier } from '../lib/types'
@@ -23,6 +25,7 @@ import type { Payment, Purchase, Supplier } from '../lib/types'
 export function SuppliersPage() {
   const { can } = useAuth()
   const { currentMonthClosed } = usePeriods()
+  const [searchParams] = useSearchParams()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [selected, setSelected] = useState<Supplier | null>(null)
   const [purchases, setPurchases] = useState<Purchase[]>([])
@@ -35,10 +38,11 @@ export function SuppliersPage() {
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [supplierQuery, setSupplierQuery] = useState('')
   const [detailTab, setDetailTab] = useState('purchases')
+  const [detailTarget, setDetailTarget] = useState<InvoiceViewTarget | null>(null)
   const purchasesTable = useTableQuery(purchases, (row) =>
     searchText(row.no, dateText(row.docDate), dateText(row.postingDate), row.total),
   )
-  const paymentsTable = useTableQuery(payments, (row) => searchText(dateText(row.occurredAt), row.amount, row.ref))
+  const paymentsTable = useTableQuery(payments, (row) => searchText(dateTimeText(row.occurredAt), row.amount, row.ref))
   const visibleSuppliers = useMemo(() => {
     const needle = supplierQuery.trim().toLowerCase()
     if (!needle) return suppliers
@@ -59,13 +63,36 @@ export function SuppliersPage() {
   function reload() {
     void apiGet<Supplier[]>('/suppliers').then((rows) => {
       setSuppliers(rows)
-      setSelected((current) => rows.find((row) => row.id === current?.id) || rows[0] || null)
+      const paramId = Number(searchParams.get('id'))
+      setSelected((current) =>
+        (paramId ? rows.find((row) => row.id === paramId) : undefined) ||
+        rows.find((row) => row.id === current?.id) ||
+        rows[0] ||
+        null,
+      )
     })
   }
 
   useEffect(() => {
     reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const paramId = Number(searchParams.get('id'))
+    if (paramId && suppliers.length) {
+      const target = suppliers.find((row) => row.id === paramId)
+      if (target) setSelected(target)
+    }
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'payments' || tabParam === 'purchases') {
+      setDetailTab(tabParam)
+    }
+    const q = searchParams.get('q')
+    if (q) {
+      paymentsTable.setQuery(q)
+    }
+  }, [searchParams, suppliers])
 
   useEffect(() => {
     if (!selected) return
@@ -169,15 +196,39 @@ export function SuppliersPage() {
                               <th>تاريخ المستند</th>
                               <th>تاريخ الترحيل</th>
                               <th>القيمة</th>
+                              <th></th>
                             </tr>
                           </thead>
                           <tbody>
                             {purchasesTable.pageRows.map((row) => (
                               <tr key={row.id}>
-                                <td className="num">{row.no}</td>
+                                <td>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <InvoiceRefButton
+                                      label={row.no}
+                                      onClick={() => setDetailTarget({ kind: 'purchase', data: row })}
+                                    />
+                                    {row.reversedOfId && row.reversedOfNo ? (
+                                      <InvoiceRefButton
+                                        label={row.reversedOfNo}
+                                        title="عرض فاتورة الشراء الأصلية"
+                                        onClick={() => setDetailTarget({ kind: 'purchase', id: row.reversedOfId! })}
+                                      />
+                                    ) : null}
+                                  </div>
+                                </td>
                                 <td className="num">{dateText(row.docDate)}</td>
                                 <td className="num">{dateText(row.postingDate)}</td>
                                 <td className="num">{money(row.total)}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setDetailTarget({ kind: 'purchase', data: row })}
+                                  >
+                                    التفاصيل
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -205,19 +256,37 @@ export function SuppliersPage() {
                         <table className="table">
                           <thead>
                             <tr>
-                              <th>التاريخ</th>
+                              <th>التاريخ والوقت</th>
                               <th>المبلغ</th>
                               <th>مرجع</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {paymentsTable.pageRows.map((row) => (
-                              <tr key={row.id}>
-                                <td className="num">{dateText(row.occurredAt)}</td>
-                                <td className="num">{money(row.amount)}</td>
-                                <td>{row.ref || '—'}</td>
-                              </tr>
-                            ))}
+                            {paymentsTable.pageRows.map((row) => {
+                              const rawRef = (row.ref || '').trim()
+                              const candidateNo = rawRef.startsWith('عكس ')
+                                ? rawRef.slice('عكس '.length).trim()
+                                : rawRef
+                              const matchedPurchase = candidateNo
+                                ? purchases.find((p) => p.no.toLowerCase() === candidateNo.toLowerCase())
+                                : undefined
+                              return (
+                                <tr key={row.id}>
+                                  <td className="num">{dateTimeText(row.occurredAt)}</td>
+                                  <td className="num">{money(row.amount)}</td>
+                                  <td>
+                                    {matchedPurchase ? (
+                                      <InvoiceRefButton
+                                        label={rawRef}
+                                        onClick={() => setDetailTarget({ kind: 'purchase', data: matchedPurchase })}
+                                      />
+                                    ) : (
+                                      row.ref || '—'
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </DataTable>
@@ -287,6 +356,12 @@ export function SuppliersPage() {
           </form>
         </Dialog>
       ) : null}
+
+      <InvoiceDetailsDialog
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onSelectTarget={setDetailTarget}
+      />
     </main>
   )
 }

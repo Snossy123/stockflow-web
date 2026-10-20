@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { InventoryPage } from './pages/InventoryPage'
 import { LoginPage } from './pages/LoginPage'
+import { PurchasesPage } from './pages/PurchasesPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { RevenuePage } from './pages/RevenuePage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -43,6 +44,7 @@ export default function App() {
           <Route element={<Guard />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/expenses" element={<ExpensesPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
